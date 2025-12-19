@@ -704,6 +704,14 @@ textarea.form-input {
   color: var(--gray-500);
 }
 
+.transaction-item {
+  transition: all 0.2s ease;
+}
+
+.transaction-item:hover {
+  border-color: var(--gray-400) !important;
+}
+
 .wallet-actions {
   display: flex;
   gap: 12px;

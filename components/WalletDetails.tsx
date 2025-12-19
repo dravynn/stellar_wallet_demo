@@ -211,8 +211,11 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
 
     try {
       onStatus('Loading transactions...', 'info')
-      const txs = await stellarWallet.getTransactions(publicKey, 20)
-      onShowModal('transactions', { transactions: txs })
+      const txs = await stellarWallet.getTransactions(publicKey, 50, true) // Load with operations
+      onShowModal('transactions', { 
+        transactions: txs,
+        publicKey: publicKey
+      })
     } catch (error: any) {
       onStatus(`Error loading transactions: ${error.message}`, 'error')
     }
@@ -418,16 +421,39 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
               {transactions.map((tx) => {
                 const fee = tx.feePaid || tx.feeCharged
                 const feeInXLM = fee ? (parseInt(fee) / 10000000).toFixed(7) : null
+                const explorerUrl = networkManager.getCurrentNetwork().type === 'testnet'
+                  ? `https://stellar.expert/explorer/testnet/tx/${tx.hash}`
+                  : `https://stellar.expert/explorer/public/tx/${tx.hash}`
+                
                 return (
-                  <div key={tx.id} className="transaction-item">
+                  <div key={tx.id} className="transaction-item" style={{ cursor: 'pointer' }} onClick={() => {
+                    if (onShowModal) {
+                      onShowModal('transactions', { 
+                        transactions: [tx],
+                        publicKey: publicKey
+                      })
+                    }
+                  }}>
                     <div className="transaction-header">
-                      <span className="transaction-id">{tx.hash.substring(0, 8)}...</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span className="transaction-id">{tx.hash.substring(0, 12)}...</span>
+                        <a
+                          href={explorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ fontSize: '10px', color: 'var(--gray-500)', textDecoration: 'none' }}
+                        >
+                          ↗
+                        </a>
+                      </div>
                       <span className={`transaction-status ${tx.successful ? 'success' : 'failed'}`}>
                         {tx.successful ? 'Success' : 'Failed'}
                       </span>
                     </div>
                     <div className="transaction-meta">
                       <span>Ledger: {tx.ledger}</span>
+                      <span>Ops: {tx.operationCount}</span>
                       {feeInXLM && <span>Fee: {feeInXLM} XLM</span>}
                       <span>{new Date(tx.createdAt).toLocaleString()}</span>
                     </div>

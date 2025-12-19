@@ -9,6 +9,12 @@ import AccountList from './AccountList'
 import WalletDetails from './WalletDetails'
 import NetworkSwitcher from './NetworkSwitcher'
 
+// Ensure networkManager is available in client components
+if (typeof window !== 'undefined') {
+  // Initialize network manager on client side
+  networkManager.getCurrentNetwork()
+}
+
 export default function WalletApp() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
@@ -229,7 +235,7 @@ export default function WalletApp() {
           )}
           {modal.type === 'receive' && <ReceivePaymentView publicKey={modal.props.publicKey} accountName={modal.props.accountName} onClose={() => setModal(null)} />}
           {modal.type === 'secret' && <SecretKeyView secretKey={modal.props.secretKey} onClose={() => setModal(null)} />}
-          {modal.type === 'transactions' && <TransactionsView transactions={modal.props.transactions} onClose={() => setModal(null)} />}
+          {modal.type === 'transactions' && <TransactionsView transactions={modal.props.transactions} publicKey={modal.props.publicKey} onClose={() => setModal(null)} />}
         </Modal>
       )}
     </div>
@@ -689,7 +695,10 @@ function ReceivePaymentView({ publicKey, accountName, onClose }: { publicKey: st
   )
 }
 
-function TransactionsView({ transactions, onClose }: { transactions: any[]; onClose: () => void }) {
+function TransactionsView({ transactions, publicKey, onClose }: { transactions: any[]; publicKey?: string; onClose: () => void }) {
+  const [expandedTx, setExpandedTx] = useState<string | null>(null)
+  const [filter, setFilter] = useState<'all' | 'success' | 'failed'>('all')
+  
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString()
@@ -701,30 +710,184 @@ function TransactionsView({ transactions, onClose }: { transactions: any[]; onCl
     return `${feeInXLM} XLM`
   }
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      // Could show a toast notification here
+    })
+  }
+
+  const getExplorerUrl = (hash: string) => {
+    // Use networkManager directly (already imported at top level)
+    if (typeof window === 'undefined') return '#'
+    try {
+      const network = networkManager.getCurrentNetwork()
+      const explorerBase = network.type === 'testnet' 
+        ? 'https://stellar.expert/explorer/testnet/tx'
+        : 'https://stellar.expert/explorer/public/tx'
+      return `${explorerBase}/${hash}`
+    } catch {
+      return `https://stellar.expert/explorer/testnet/tx/${hash}`
+    }
+  }
+
+  const filteredTransactions = transactions.filter(tx => {
+    if (filter === 'all') return true
+    if (filter === 'success') return tx.successful
+    if (filter === 'failed') return !tx.successful
+    return true
+  })
+
   return (
     <>
-      <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-        {transactions.length > 0 ? (
-          transactions.map((tx) => (
-            <div key={tx.id} className="transaction-item" style={{ marginBottom: '12px', padding: '12px', border: '1px solid var(--gray-200)' }}>
-              <div className="transaction-header" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <code style={{ fontSize: '11px', color: 'var(--gray-600)' }}>{tx.hash.substring(0, 16)}...</code>
-                <span className={`transaction-status ${tx.successful ? 'success' : 'failed'}`}>
-                  {tx.successful ? 'Success' : 'Failed'}
-                </span>
-              </div>
-              <div className="transaction-meta" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', fontSize: '12px', color: 'var(--gray-500)', marginBottom: '8px' }}>
-                <span>Ledger: {tx.ledger}</span>
-                <span>Operations: {tx.operationCount}</span>
-                <span>{formatDate(tx.createdAt)}</span>
-              </div>
-              {(tx.feePaid || tx.feeCharged) && (
-                <div style={{ fontSize: '11px', color: 'var(--gray-600)', marginTop: '4px', paddingTop: '8px', borderTop: '1px solid var(--gray-200)' }}>
-                  <strong>Fee:</strong> {formatFee(tx.feePaid || tx.feeCharged)}
+      <div style={{ marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+          <div style={{ fontSize: '13px', color: 'var(--gray-600)' }}>
+            Total: <strong>{transactions.length}</strong> transactions
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className={`btn btn-small ${filter === 'all' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setFilter('all')}
+            >
+              All
+            </button>
+            <button
+              className={`btn btn-small ${filter === 'success' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setFilter('success')}
+            >
+              Success
+            </button>
+            <button
+              className={`btn btn-small ${filter === 'failed' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setFilter('failed')}
+            >
+              Failed
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+        {filteredTransactions.length > 0 ? (
+          filteredTransactions.map((tx) => {
+            const isExpanded = expandedTx === tx.id
+            return (
+              <div 
+                key={tx.id} 
+                className="transaction-item" 
+                style={{ 
+                  marginBottom: '12px', 
+                  padding: '16px', 
+                  border: '1px solid var(--gray-200)',
+                  cursor: 'pointer',
+                  transition: 'border-color 0.2s ease'
+                }}
+                onClick={() => setExpandedTx(isExpanded ? null : tx.id)}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--gray-400)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = 'var(--gray-200)'
+                }}
+              >
+                <div className="transaction-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                      <code style={{ fontSize: '11px', color: 'var(--gray-600)', fontFamily: 'monospace' }}>
+                        {tx.hash.substring(0, 16)}...
+                      </code>
+                      <button
+                        className="btn btn-small"
+                        style={{ padding: '2px 6px', fontSize: '10px' }}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          copyToClipboard(tx.hash)
+                        }}
+                        title="Copy hash"
+                      >
+                        Copy
+                      </button>
+                      <a
+                        href={getExplorerUrl(tx.hash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: '10px', color: 'var(--gray-500)', textDecoration: 'none' }}
+                      >
+                        View ↗
+                      </a>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--gray-500)', marginTop: '4px' }}>
+                      {formatDate(tx.createdAt)}
+                    </div>
+                  </div>
+                  <span className={`transaction-status ${tx.successful ? 'success' : 'failed'}`}>
+                    {tx.successful ? 'Success' : 'Failed'}
+                  </span>
                 </div>
-              )}
-            </div>
-          ))
+
+                <div className="transaction-meta" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px', fontSize: '12px', color: 'var(--gray-600)', marginBottom: '8px' }}>
+                  <div>
+                    <span style={{ color: 'var(--gray-500)', fontSize: '11px' }}>Ledger:</span>
+                    <div style={{ fontWeight: 500 }}>{tx.ledger}</div>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--gray-500)', fontSize: '11px' }}>Operations:</span>
+                    <div style={{ fontWeight: 500 }}>{tx.operationCount}</div>
+                  </div>
+                  {(tx.feePaid || tx.feeCharged) && (
+                    <div>
+                      <span style={{ color: 'var(--gray-500)', fontSize: '11px' }}>Fee:</span>
+                      <div style={{ fontWeight: 500, fontFamily: 'monospace' }}>{formatFee(tx.feePaid || tx.feeCharged)}</div>
+                    </div>
+                  )}
+                </div>
+
+                {tx.memo && (
+                  <div style={{ fontSize: '11px', color: 'var(--gray-600)', marginTop: '8px', padding: '8px', background: 'var(--gray-50)', border: '1px solid var(--gray-200)' }}>
+                    <strong>Memo:</strong> {tx.memo} {tx.memoType && `(${tx.memoType})`}
+                  </div>
+                )}
+
+                {isExpanded && (
+                  <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--gray-200)' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 500, marginBottom: '8px', color: 'var(--gray-600)' }}>
+                      TRANSACTION DETAILS
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--gray-600)', marginBottom: '4px' }}>
+                      <strong>Hash:</strong> <code style={{ fontFamily: 'monospace' }}>{tx.hash}</code>
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--gray-600)', marginBottom: '4px' }}>
+                      <strong>Source:</strong> <code style={{ fontFamily: 'monospace' }}>{tx.sourceAccount}</code>
+                    </div>
+                    {tx.operations && tx.operations.length > 0 && (
+                      <div style={{ marginTop: '12px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 500, marginBottom: '8px', color: 'var(--gray-600)' }}>
+                          OPERATIONS ({tx.operations.length})
+                        </div>
+                        {tx.operations.map((op: any, idx: number) => (
+                          <div key={idx} style={{ padding: '8px', background: 'var(--gray-50)', marginBottom: '4px', fontSize: '11px' }}>
+                            <div style={{ fontWeight: 500, marginBottom: '4px' }}>{op.type}</div>
+                            {op.amount && (
+                              <div>Amount: {parseFloat(op.amount).toFixed(7)} {op.assetCode || 'XLM'}</div>
+                            )}
+                            {op.from && <div>From: {op.from.substring(0, 8)}...</div>}
+                            {op.to && <div>To: {op.to.substring(0, 8)}...</div>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!isExpanded && (
+                  <div style={{ fontSize: '10px', color: 'var(--gray-400)', marginTop: '8px', textAlign: 'center' }}>
+                    Click to expand details
+                  </div>
+                )}
+              </div>
+            )
+          })
         ) : (
           <p className="info-message">No transactions found</p>
         )}
