@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import seedVault from '@/lib/services/seedVault'
 import stellarWallet from '@/lib/services/stellarWallet'
+import networkManager from '@/lib/services/networkManager'
 import type { AccountDetails, Transaction } from '@/lib/services/stellarWallet'
 
 interface WalletDetailsProps {
@@ -25,6 +26,7 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
       setAccountDetails(null)
       setTransactions([])
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId])
 
   const loadAccountDetails = async () => {
@@ -166,12 +168,24 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
 
   const totalXLM = accountDetails.balances.find(b => b.asset === 'XLM')
   const xlmBalance = totalXLM ? parseFloat(totalXLM.balance) : 0
+  const isTestnet = networkManager.isTestnet()
+  const currentNetwork = networkManager.getCurrentNetwork()
 
   if (accountDetails.isNewAccount) {
     return (
       <div className="account-details">
         <h3>{account.name}</h3>
         <div className="account-info">
+          <div className="info-row">
+            <label>Network:</label>
+            <span className="status-badge" style={{ 
+              background: isTestnet ? 'var(--white)' : 'var(--black)', 
+              color: isTestnet ? 'var(--gray-600)' : 'var(--white)',
+              borderColor: isTestnet ? 'var(--gray-400)' : 'var(--black)'
+            }}>
+              {currentNetwork.name}
+            </span>
+          </div>
           <div className="info-row">
             <label>Public Key:</label>
             <code className="public-key">{publicKey}</code>
@@ -195,8 +209,19 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
               <button className="btn btn-small" onClick={() => copyToClipboard(secretKey)}>Copy</button>
             </div>
           </div>
-          <p className="info-message">This account hasn't been funded yet. Click the button below to fund it on the testnet.</p>
-          <button className="btn btn-primary" onClick={handleFundAccount}>Fund Testnet Account</button>
+          {isTestnet ? (
+            <>
+              <p className="info-message">This account hasn't been funded yet. Click the button below to fund it on the testnet.</p>
+              <button className="btn btn-primary" onClick={handleFundAccount}>Fund Testnet Account</button>
+            </>
+          ) : (
+            <div className="error-message" style={{ marginTop: '16px' }}>
+              <p><strong>⚠️ Mainnet Account</strong></p>
+              <p style={{ marginTop: '8px', fontSize: '13px' }}>
+                This account is on mainnet. You need to fund it with real XLM from an exchange or another account. Friendbot funding is only available on testnet.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -206,6 +231,16 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
     <div className="account-details">
       <h3>{account.name}</h3>
       <div className="account-info">
+        <div className="info-row">
+          <label>Network:</label>
+          <span className="status-badge" style={{ 
+            background: isTestnet ? 'var(--white)' : 'var(--black)', 
+            color: isTestnet ? 'var(--gray-600)' : 'var(--white)',
+            borderColor: isTestnet ? 'var(--gray-400)' : 'var(--black)'
+          }}>
+            {currentNetwork.name}
+          </span>
+        </div>
         <div className="info-row">
           <label>Public Key:</label>
           <code className="public-key">{publicKey}</code>

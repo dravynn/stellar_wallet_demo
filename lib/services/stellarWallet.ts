@@ -1,7 +1,5 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
-
-const HORIZON_URL = 'https://horizon-testnet.stellar.org';
-const NETWORK_PASSPHRASE = StellarSdk.Networks.TESTNET;
+import networkManager, { NetworkConfig } from './networkManager';
 
 export interface Balance {
   asset: string;
@@ -35,10 +33,18 @@ export interface Transaction {
  * Handles Stellar account operations
  */
 class StellarWallet {
-  private server: any;
+  /**
+   * Get current Horizon server instance
+   */
+  private getServer(): any {
+    return networkManager.getHorizonServer();
+  }
 
-  constructor() {
-    this.server = new StellarSdk.Horizon.Server(HORIZON_URL);
+  /**
+   * Get current network passphrase
+   */
+  private getNetworkPassphrase(): string {
+    return networkManager.getNetworkPassphrase();
   }
 
   /**
@@ -69,10 +75,11 @@ class StellarWallet {
    */
   async loadAccount(publicKey: string): Promise<AccountDetails> {
     try {
-      const account = await this.server.loadAccount(publicKey);
+      const server = this.getServer();
+      const account = await server.loadAccount(publicKey);
       return {
         accountId: account.accountId(),
-        balances: account.balances().map(balance => ({
+        balances: account.balances().map((balance: any) => ({
           asset: balance.asset_type === 'native' ? 'XLM' : balance.asset_code,
           assetType: balance.asset_type,
           balance: balance.balance,
@@ -101,9 +108,15 @@ class StellarWallet {
    * Fund account on testnet (friendbot)
    */
   async fundTestnetAccount(publicKey: string) {
+    const network = networkManager.getCurrentNetwork();
+    
+    if (!network.friendbotUrl) {
+      throw new Error('Friendbot is only available on testnet');
+    }
+
     try {
       const response = await fetch(
-        `https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`
+        `${network.friendbotUrl}?addr=${encodeURIComponent(publicKey)}`
       );
       const data = await response.json();
       console.log("fundTestnetAccount data", data);
@@ -118,7 +131,8 @@ class StellarWallet {
    */
   async createPayment(sourceKeypair: any, destinationPublicKey: string, amount: number, asset: string = 'XLM') {
     try {
-      const sourceAccount = await this.server.loadAccount(sourceKeypair.publicKey());
+      const server = this.getServer();
+      const sourceAccount = await server.loadAccount(sourceKeypair.publicKey());
       
       let paymentAsset: any;
       if (asset === 'XLM') {
@@ -129,7 +143,7 @@ class StellarWallet {
 
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
         fee: StellarSdk.BASE_FEE,
-        networkPassphrase: NETWORK_PASSPHRASE
+        networkPassphrase: this.getNetworkPassphrase()
       })
         .addOperation(
           StellarSdk.Operation.payment({
@@ -143,7 +157,7 @@ class StellarWallet {
 
       transaction.sign(sourceKeypair);
       
-      const result = await this.server.submitTransaction(transaction);
+      const result = await server.submitTransaction(transaction);
       return result;
     } catch (error: any) {
       throw new Error(`Payment failed: ${error.message}`);
@@ -155,14 +169,15 @@ class StellarWallet {
    */
   async getTransactions(publicKey: string, limit: number = 10): Promise<Transaction[]> {
     try {
-      const transactions = await this.server
+      const server = this.getServer();
+      const transactions = await server
         .transactions()
         .forAccount(publicKey)
         .order('desc')
         .limit(limit)
         .call();
 
-      return transactions.records.map(tx => ({
+      return transactions.records.map((tx: any) => ({
         id: tx.id,
         hash: tx.hash,
         ledger: tx.ledger,
