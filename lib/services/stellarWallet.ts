@@ -40,6 +40,20 @@ export interface Transaction {
   successful: boolean;
   feePaid?: string;
   feeCharged?: string;
+  memo?: string;
+  memoType?: string;
+  operations?: TransactionOperation[];
+}
+
+export interface TransactionOperation {
+  id: string;
+  type: string;
+  sourceAccount?: string;
+  assetCode?: string;
+  assetIssuer?: string;
+  amount?: string;
+  from?: string;
+  to?: string;
 }
 
 /**
@@ -246,11 +260,13 @@ class StellarWallet {
   }
 
   /**
-   * Get transaction history
+   * Get transaction history with operations
    */
-  async getTransactions(publicKey: string, limit: number = 10): Promise<Transaction[]> {
+  async getTransactions(publicKey: string, limit: number = 10, includeOperations: boolean = false): Promise<Transaction[]> {
     try {
       const server = this.getServer();
+      const network = networkManager.getCurrentNetwork();
+      
       const transactions = await server
         .transactions()
         .forAccount(publicKey)
@@ -258,20 +274,64 @@ class StellarWallet {
         .limit(limit)
         .call();
 
-      return transactions.records.map((tx: any) => ({
-        id: tx.id,
-        hash: tx.hash,
-        ledger: tx.ledger,
-        createdAt: tx.created_at,
-        sourceAccount: tx.source_account,
-        operationCount: tx.operation_count,
-        successful: tx.successful,
-        feePaid: tx.fee_paid,
-        feeCharged: tx.fee_charged
-      }));
+      const result: Transaction[] = [];
+
+      for (const tx of transactions.records) {
+        const transaction: Transaction = {
+          id: tx.id,
+          hash: tx.hash,
+          ledger: tx.ledger,
+          createdAt: tx.created_at,
+          sourceAccount: tx.source_account,
+          operationCount: tx.operation_count,
+          successful: tx.successful,
+          feePaid: tx.fee_paid,
+          feeCharged: tx.fee_charged,
+          memo: tx.memo,
+          memoType: tx.memo_type
+        };
+
+        // Load operations if requested
+        if (includeOperations) {
+          try {
+            const operations = await server
+              .operations()
+              .forTransaction(tx.hash)
+              .call();
+
+            transaction.operations = operations.records.map((op: any) => ({
+              id: op.id,
+              type: op.type,
+              sourceAccount: op.source_account,
+              assetCode: op.asset_code,
+              assetIssuer: op.asset_issuer,
+              amount: op.amount,
+              from: op.from,
+              to: op.to
+            }));
+          } catch (err) {
+            console.error('Error loading operations:', err);
+          }
+        }
+
+        result.push(transaction);
+      }
+
+      return result;
     } catch (error: any) {
       throw new Error(`Failed to fetch transactions: ${error.message}`);
     }
+  }
+
+  /**
+   * Get transaction explorer URL
+   */
+  getTransactionExplorerUrl(hash: string): string {
+    const network = networkManager.getCurrentNetwork();
+    const explorerBase = network.type === 'testnet' 
+      ? 'https://stellar.expert/explorer/testnet/tx'
+      : 'https://stellar.expert/explorer/public/tx';
+    return `${explorerBase}/${hash}`;
   }
 }
 
