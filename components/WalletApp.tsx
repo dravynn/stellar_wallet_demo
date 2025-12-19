@@ -3,19 +3,33 @@
 import { useState, useEffect } from 'react'
 import seedVault from '@/lib/services/seedVault'
 import stellarWallet from '@/lib/services/stellarWallet'
+import networkManager from '@/lib/services/networkManager'
 import Modal from './Modal'
 import AccountList from './AccountList'
 import WalletDetails from './WalletDetails'
+import NetworkSwitcher from './NetworkSwitcher'
 
 export default function WalletApp() {
   const [accounts, setAccounts] = useState<any[]>([])
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null)
   const [status, setStatus] = useState<{ message: string; type: 'info' | 'success' | 'error' } | null>(null)
   const [modal, setModal] = useState<{ type: string; props?: any } | null>(null)
+  const [networkKey, setNetworkKey] = useState(0) // Force re-render on network change
 
   useEffect(() => {
     loadAccounts()
   }, [])
+
+  const handleNetworkChange = () => {
+    setNetworkKey(prev => prev + 1)
+    showStatus(`Switched to ${networkManager.getCurrentNetwork().name}`, 'info')
+    // Clear selected account to force reload with new network
+    if (selectedAccountId) {
+      const tempId = selectedAccountId
+      setSelectedAccountId(null)
+      setTimeout(() => setSelectedAccountId(tempId), 100)
+    }
+  }
 
   const loadAccounts = () => {
     setAccounts(seedVault.getAllAccounts())
@@ -134,8 +148,13 @@ export default function WalletApp() {
   return (
     <div id="app">
       <header>
-        <h1>Stellar Wallet</h1>
-        <p className="subtitle">Seed Vault</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <div>
+            <h1>Stellar Wallet</h1>
+            <p className="subtitle">Seed Vault</p>
+          </div>
+          <NetworkSwitcher onNetworkChange={handleNetworkChange} />
+        </div>
       </header>
 
       <main>
@@ -166,6 +185,7 @@ export default function WalletApp() {
           <section className="wallet-section">
             <h2>Wallet Operations</h2>
             <WalletDetails
+              key={networkKey}
               accountId={selectedAccountId}
               onStatus={showStatus}
               onRefresh={loadAccounts}
