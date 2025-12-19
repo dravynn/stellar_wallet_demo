@@ -86,25 +86,87 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
   }
 
   const handleSendPayment = () => {
-    if (!accountId || !onShowModal) return
+    if (!accountId || !onShowModal || !accountDetails) return
+    
+    // Check if account has any balances
+    if (accountDetails.balances.length === 0) {
+      onStatus('No balances available to send', 'error')
+      return
+    }
+
     onShowModal('send', {
       accountId,
-      onSubmit: async (data: { destination: string; amount: number }) => {
+      balances: accountDetails.balances,
+      onSubmit: async (data: { destination: string; amount: number; asset: { code: string; issuer?: string } }) => {
         try {
           const secretKey = seedVault.getSecretKey(accountId)
-          if (!secretKey) return
+          if (!secretKey) {
+            throw new Error('Secret key not found')
+          }
 
           const keypair = stellarWallet.getKeypairFromSecret(secretKey)
+          
+          // Validate destination address
+          if (!data.destination.startsWith('G') || data.destination.length !== 56) {
+            throw new Error('Invalid destination address')
+          }
+
+          // Check balance
+          const selectedBalance = accountDetails.balances.find(b => 
+            b.asset === data.asset.code && 
+            (!data.asset.issuer || b.issuer === data.asset.issuer)
+          )
+
+          if (!selectedBalance) {
+            throw new Error(`Balance not found for ${data.asset.code}`)
+          }
+
+          const availableBalance = parseFloat(selectedBalance.balance)
+          if (data.amount > availableBalance) {
+            throw new Error(`Insufficient balance. Available: ${availableBalance.toFixed(7)}`)
+          }
+
+          // For XLM, check if there's enough for fee
+          if (data.asset.code === 'XLM') {
+            const xlmBalance = accountDetails.balances.find(b => b.asset === 'XLM')
+            const xlmAvailable = xlmBalance ? parseFloat(xlmBalance.balance) : 0
+            const feeRequired = 0.0000100
+            if (data.amount + feeRequired > xlmAvailable) {
+              throw new Error(`Insufficient XLM for amount + fee. Need ${(data.amount + feeRequired).toFixed(7)} XLM`)
+            }
+          }
+
           onStatus('Sending payment...', 'info')
-          await stellarWallet.createPayment(keypair, data.destination, data.amount)
-          onStatus('Payment sent successfully!', 'success')
+          const result = await stellarWallet.createPayment(keypair, data.destination, data.amount, data.asset)
+          onStatus(`Payment sent successfully! Fee: ${result.feeInfo.feeInXLM} XLM`, 'success')
+          
+          // Close modal and refresh
           setTimeout(() => {
             loadAccountDetails()
           }, 1500)
         } catch (error: any) {
           onStatus(`Error: ${error.message}`, 'error')
+          throw error // Re-throw to prevent modal from closing
         }
       }
+    })
+  }
+
+  const handleReceivePayment = () => {
+    if (!accountId || !onShowModal) return
+    
+    const account = seedVault.getAccount(accountId)
+    if (!account) return
+
+    const secretKey = seedVault.getSecretKey(accountId)
+    if (!secretKey) return
+
+    const keypair = stellarWallet.getKeypairFromSecret(secretKey)
+    const publicKey = keypair.publicKey()
+
+    onShowModal('receive', {
+      publicKey,
+      accountName: account.name
     })
   }
 
@@ -212,15 +274,23 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
           {isTestnet ? (
             <>
               <p className="info-message">This account hasn't been funded yet. Click the button below to fund it on the testnet.</p>
-              <button className="btn btn-primary" onClick={handleFundAccount}>Fund Testnet Account</button>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '20px' }}>
+                <button className="btn btn-primary" onClick={handleFundAccount}>Fund Testnet Account</button>
+                <button className="btn btn-secondary" onClick={handleReceivePayment}>Receive</button>
+              </div>
             </>
           ) : (
-            <div className="error-message" style={{ marginTop: '16px' }}>
-              <p><strong>⚠️ Mainnet Account</strong></p>
-              <p style={{ marginTop: '8px', fontSize: '13px' }}>
-                This account is on mainnet. You need to fund it with real XLM from an exchange or another account. Friendbot funding is only available on testnet.
-              </p>
-            </div>
+            <>
+              <div className="error-message" style={{ marginTop: '16px' }}>
+                <p><strong>⚠️ Mainnet Account</strong></p>
+                <p style={{ marginTop: '8px', fontSize: '13px' }}>
+                  This account is on mainnet. You need to fund it with real XLM from an exchange or another account. Friendbot funding is only available on testnet.
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '20px' }}>
+                <button className="btn btn-secondary" onClick={handleReceivePayment}>Receive</button>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -251,17 +321,39 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
           <span className="status-badge active">Active</span>
         </div>
         <div className="balances-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
             <h4>Balances</h4>
-            {xlmBalance > 0 && (
-              <button className="btn btn-small btn-primary" onClick={handleSendPayment}>Send Payment</button>
-            )}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button 
+                className="btn btn-small btn-primary" 
+                onClick={handleSendPayment}
+                disabled={accountDetails.balances.length === 0}
+                style={{ opacity: accountDetails.balances.length === 0 ? 0.5 : 1, cursor: accountDetails.balances.length === 0 ? 'not-allowed' : 'pointer' }}
+              >
+                Send
+              </button>
+              <button className="btn btn-small btn-secondary" onClick={handleReceivePayment}>Receive</button>
+            </div>
           </div>
           {accountDetails.balances.length > 0 ? (
             <div className="balances-list">
               {accountDetails.balances.map((balance, idx) => (
                 <div key={idx} className="balance-item">
-                  <span className="balance-asset">{balance.asset}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <span className="balance-asset">
+                      {balance.asset}
+                      {balance.issuer && (
+                        <span style={{ fontSize: '10px', color: 'var(--gray-500)', marginLeft: '8px' }}>
+                          ({balance.issuer.substring(0, 8)}...)
+                        </span>
+                      )}
+                    </span>
+                    {balance.limit && (
+                      <span style={{ fontSize: '11px', color: 'var(--gray-500)' }}>
+                        Limit: {parseFloat(balance.limit).toFixed(7)}
+                      </span>
+                    )}
+                  </div>
                   <span className="balance-amount">{parseFloat(balance.balance).toFixed(7)}</span>
                 </div>
               ))}
@@ -274,20 +366,25 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
           <div className="transactions-section">
             <h4>Recent Transactions</h4>
             <div className="transactions-list">
-              {transactions.map((tx) => (
-                <div key={tx.id} className="transaction-item">
-                  <div className="transaction-header">
-                    <span className="transaction-id">{tx.hash.substring(0, 8)}...</span>
-                    <span className={`transaction-status ${tx.successful ? 'success' : 'failed'}`}>
-                      {tx.successful ? 'Success' : 'Failed'}
-                    </span>
+              {transactions.map((tx) => {
+                const fee = tx.feePaid || tx.feeCharged
+                const feeInXLM = fee ? (parseInt(fee) / 10000000).toFixed(7) : null
+                return (
+                  <div key={tx.id} className="transaction-item">
+                    <div className="transaction-header">
+                      <span className="transaction-id">{tx.hash.substring(0, 8)}...</span>
+                      <span className={`transaction-status ${tx.successful ? 'success' : 'failed'}`}>
+                        {tx.successful ? 'Success' : 'Failed'}
+                      </span>
+                    </div>
+                    <div className="transaction-meta">
+                      <span>Ledger: {tx.ledger}</span>
+                      {feeInXLM && <span>Fee: {feeInXLM} XLM</span>}
+                      <span>{new Date(tx.createdAt).toLocaleString()}</span>
+                    </div>
                   </div>
-                  <div className="transaction-meta">
-                    <span>Ledger: {tx.ledger}</span>
-                    <span>{new Date(tx.createdAt).toLocaleString()}</span>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
             <button className="btn btn-small btn-secondary" onClick={handleViewAllTransactions} style={{ marginTop: '12px' }}>
               View All Transactions
