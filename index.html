@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stellar Wallet Demo - Seed Vault</title>
+    <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Stellar Wallet</h1>
+            <p class="subtitle">Seed Vault</p>
+        </header>
+        
+        <main>
+            <div class="container">
+                <!-- Seed Vault Section -->
+                <section class="vault-section">
+                    <h2>Seed Vault</h2>
+                    <div class="vault-controls">
+                        <button id="createAccountBtn" class="btn btn-primary">Create New Account</button>
+                        <button id="importAccountBtn" class="btn btn-secondary">Import Account</button>
+                        <button id="exportVaultBtn" class="btn btn-secondary">Export Vault</button>
+                        <button id="clearVaultBtn" class="btn btn-danger">Clear Vault</button>
+                    </div>
+                    
+                    <div id="vaultStatus" class="status-message"></div>
+                    
+                    <div id="accountsList" class="accounts-list"></div>
+                </section>
+                
+                <!-- Wallet Operations Section -->
+                <section class="wallet-section">
+                    <h2>Wallet Operations</h2>
+                    <div id="walletContent">
+                        <p class="info-message">Select an account from the vault to view wallet details</p>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Modal Overlay -->
+        <div id="modalOverlay" class="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h3 id="modalTitle"></h3>
+                    <button class="modal-close" onclick="closeModal()">&times;</button>
+                </div>
+                <div class="modal-body" id="modalBody"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
