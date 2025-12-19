@@ -90,28 +90,55 @@ class StellarWallet {
   async loadAccount(publicKey: string): Promise<AccountDetails> {
     try {
       const server = this.getServer();
+      const network = networkManager.getCurrentNetwork();
+      
+      console.log(`Loading account ${publicKey} from ${network.horizonUrl}`);
+      
       const account = await server.loadAccount(publicKey);
+      
+      // account.balances is a property (array), not a function
+      const balances = (account.balances || []).map((balance: any) => ({
+        asset: balance.asset_type === 'native' ? 'XLM' : balance.asset_code,
+        assetType: balance.asset_type,
+        balance: balance.balance,
+        limit: balance.limit,
+        issuer: balance.asset_issuer
+      }));
+      
+      console.log(`Account loaded successfully. Balances:`, balances);
+      console.log(`Account details:`, {
+        accountId: account.accountId(),
+        sequenceNumber: account.sequenceNumber(),
+        subentryCount: account.subentryCount()
+      });
+      
       return {
         accountId: account.accountId(),
-        balances: account.balances().map((balance: any) => ({
-          asset: balance.asset_type === 'native' ? 'XLM' : balance.asset_code,
-          assetType: balance.asset_type,
-          balance: balance.balance,
-          limit: balance.limit,
-          issuer: balance.asset_issuer
-        })),
+        balances,
         sequenceNumber: account.sequenceNumber(),
         subentryCount: account.subentryCount(),
       };
     } catch (error: any) {
+      console.error('Error loading account:', error);
+      
+      if (error.response) {
+        console.error('Error response:', error.response.status, error.response.statusText);
+      }
+      
       if (error.response && error.response.status === 404) {
+        const network = networkManager.getCurrentNetwork();
+        console.log(`Account not found on ${network.name}. This might mean:`);
+        console.log(`1. Account hasn't been funded yet`);
+        console.log(`2. You're checking the wrong network (currently: ${network.name})`);
+        console.log(`3. Account was funded on a different network`);
+        
         return {
           accountId: publicKey,
           balances: [],
           sequenceNumber: '0',
           subentryCount: 0,
           isNewAccount: true,
-          message: 'Account not found on network. Fund it to activate.'
+          message: `Account not found on ${network.name}. Make sure you're on the correct network.`
         };
       }
       throw error;

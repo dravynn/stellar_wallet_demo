@@ -6,6 +6,9 @@ import stellarWallet from '@/lib/services/stellarWallet'
 import networkManager from '@/lib/services/networkManager'
 import type { AccountDetails, Transaction } from '@/lib/services/stellarWallet'
 
+// Force refresh when network changes
+let lastNetworkType: string | null = null
+
 interface WalletDetailsProps {
   accountId: string | null
   onStatus: (message: string, type: 'info' | 'success' | 'error') => void
@@ -21,6 +24,13 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
 
   useEffect(() => {
     if (accountId) {
+      // Check if network changed
+      const currentNetworkType = networkManager.getCurrentNetworkType()
+      if (lastNetworkType !== null && lastNetworkType !== currentNetworkType) {
+        console.log('Network changed, reloading account...')
+      }
+      lastNetworkType = currentNetworkType
+      
       loadAccountDetails()
     } else {
       setAccountDetails(null)
@@ -43,7 +53,13 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
       const keypair = stellarWallet.getKeypairFromSecret(secretKey)
       const publicKey = keypair.publicKey()
 
+      // Log for debugging
+      const currentNetwork = networkManager.getCurrentNetwork()
+      console.log('Loading account on network:', currentNetwork.name, 'Public Key:', publicKey)
+
       const details = await stellarWallet.loadAccount(publicKey)
+      console.log('Account details loaded:', details)
+      
       setAccountDetails(details)
 
       if (!details.isNewAccount) {
@@ -53,8 +69,11 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
         } catch (err) {
           console.error('Error loading transactions:', err)
         }
+      } else {
+        console.log('Account appears to be new. If you funded it, make sure you are on the correct network (Testnet)')
       }
     } catch (error: any) {
+      console.error('Error loading account:', error)
       onStatus(`Error loading account: ${error.message}`, 'error')
     } finally {
       setLoading(false)
@@ -271,27 +290,46 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
               <button className="btn btn-small" onClick={() => copyToClipboard(secretKey)}>Copy</button>
             </div>
           </div>
-          {isTestnet ? (
-            <>
-              <p className="info-message">This account hasn't been funded yet. Click the button below to fund it on the testnet.</p>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '20px' }}>
-                <button className="btn btn-primary" onClick={handleFundAccount}>Fund Testnet Account</button>
-                <button className="btn btn-secondary" onClick={handleReceivePayment}>Receive</button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="error-message" style={{ marginTop: '16px' }}>
-                <p><strong>⚠️ Mainnet Account</strong></p>
-                <p style={{ marginTop: '8px', fontSize: '13px' }}>
-                  This account is on mainnet. You need to fund it with real XLM from an exchange or another account. Friendbot funding is only available on testnet.
-                </p>
-              </div>
-              <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '20px' }}>
-                <button className="btn btn-secondary" onClick={handleReceivePayment}>Receive</button>
-              </div>
-            </>
-          )}
+          <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--gray-200)' }}>
+            <h4 style={{ marginBottom: '16px', fontSize: '0.95em', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Actions</h4>
+            {isTestnet ? (
+              <>
+                <p className="info-message" style={{ marginBottom: '16px' }}>This account hasn't been funded yet. Click the button below to fund it on the testnet.</p>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <button className="btn btn-primary" onClick={handleFundAccount}>Fund Testnet Account</button>
+                  <button className="btn btn-secondary" onClick={handleReceivePayment}>Receive</button>
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={handleSendPayment}
+                    disabled={true}
+                    title="Fund account first to enable sending"
+                  >
+                    Send
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="error-message" style={{ marginBottom: '16px' }}>
+                  <p><strong>⚠️ Mainnet Account</strong></p>
+                  <p style={{ marginTop: '8px', fontSize: '13px' }}>
+                    This account is on mainnet. You need to fund it with real XLM from an exchange or another account. Friendbot funding is only available on testnet.
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <button className="btn btn-secondary" onClick={handleReceivePayment}>Receive</button>
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={handleSendPayment}
+                    disabled={true}
+                    title="Fund account first to enable sending"
+                  >
+                    Send
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -303,13 +341,18 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
       <div className="account-info">
         <div className="info-row">
           <label>Network:</label>
-          <span className="status-badge" style={{ 
-            background: isTestnet ? 'var(--white)' : 'var(--black)', 
-            color: isTestnet ? 'var(--gray-600)' : 'var(--white)',
-            borderColor: isTestnet ? 'var(--gray-400)' : 'var(--black)'
-          }}>
-            {currentNetwork.name}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+            <span className="status-badge" style={{ 
+              background: isTestnet ? 'var(--white)' : 'var(--black)', 
+              color: isTestnet ? 'var(--gray-600)' : 'var(--white)',
+              borderColor: isTestnet ? 'var(--gray-400)' : 'var(--black)'
+            }}>
+              {currentNetwork.name}
+            </span>
+            <span style={{ fontSize: '11px', color: 'var(--gray-500)', fontFamily: 'monospace' }}>
+              ({currentNetwork.horizonUrl.includes('testnet') ? 'TESTNET' : 'MAINNET'})
+            </span>
+          </div>
         </div>
         <div className="info-row">
           <label>Public Key:</label>
@@ -328,11 +371,17 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
                 className="btn btn-small btn-primary" 
                 onClick={handleSendPayment}
                 disabled={accountDetails.balances.length === 0}
-                style={{ opacity: accountDetails.balances.length === 0 ? 0.5 : 1, cursor: accountDetails.balances.length === 0 ? 'not-allowed' : 'pointer' }}
+                title={accountDetails.balances.length === 0 ? 'No balances available' : 'Send payment'}
               >
                 Send
               </button>
-              <button className="btn btn-small btn-secondary" onClick={handleReceivePayment}>Receive</button>
+              <button 
+                className="btn btn-small btn-secondary" 
+                onClick={handleReceivePayment}
+                title="Receive payment"
+              >
+                Receive
+              </button>
             </div>
           </div>
           {accountDetails.balances.length > 0 ? (
@@ -402,9 +451,35 @@ export default function WalletDetails({ accountId, onStatus, onRefresh, onShowMo
           </div>
         </div>
         <div className="wallet-actions">
-          <button className="btn btn-secondary" onClick={loadAccountDetails}>Refresh</button>
+          <button className="btn btn-primary" onClick={loadAccountDetails} style={{ minWidth: '120px' }}>
+            🔄 Refresh Account
+          </button>
           <button className="btn btn-secondary" onClick={handleViewSecretKey}>View Secret Key</button>
         </div>
+        {accountDetails.isNewAccount && (
+          <div style={{ 
+            marginTop: '20px', 
+            padding: '16px', 
+            background: 'var(--gray-50)', 
+            border: '1px solid var(--gray-300)',
+            fontSize: '13px'
+          }}>
+            <p style={{ marginBottom: '8px', fontWeight: 500 }}>
+              ⚠️ Account appears unfunded
+            </p>
+            <p style={{ marginBottom: '8px', color: 'var(--gray-600)' }}>
+              If you funded this account externally, please:
+            </p>
+            <ul style={{ marginLeft: '20px', color: 'var(--gray-600)', marginBottom: '8px' }}>
+              <li>Verify you are on <strong>{currentNetwork.name}</strong> network (check the network switcher in header)</li>
+              <li>Click "Refresh Account" button above</li>
+              <li>Wait a few seconds for the network to sync</li>
+            </ul>
+            <p style={{ fontSize: '12px', color: 'var(--gray-500)' }}>
+              Current Network: <strong>{currentNetwork.name}</strong> | Horizon: {currentNetwork.horizonUrl}
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )
