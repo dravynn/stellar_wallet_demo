@@ -10,8 +10,11 @@ interface NetworkSwitcherProps {
 export default function NetworkSwitcher({ onNetworkChange }: NetworkSwitcherProps) {
   const [currentNetwork, setCurrentNetwork] = useState<NetworkType>('testnet')
   const [isOpen, setIsOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    // Only read from localStorage after component mounts on client
+    setMounted(true)
     setCurrentNetwork(networkManager.getCurrentNetworkType())
   }, [])
 
@@ -24,7 +27,8 @@ export default function NetworkSwitcher({ onNetworkChange }: NetworkSwitcherProp
     }
   }
 
-  const networkConfig = networkManager.getCurrentNetwork()
+  // Use default during SSR to prevent hydration mismatch
+  const networkConfig = mounted ? networkManager.getCurrentNetwork() : { name: 'Testnet' }
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>

@@ -9,6 +9,18 @@ export interface Balance {
   issuer?: string;
 }
 
+export interface PaymentAsset {
+  code: string;
+  issuer?: string;
+}
+
+export interface FeeInfo {
+  baseFee: string;
+  operationFee: string;
+  totalFee: string;
+  feeInXLM: string;
+}
+
 export interface AccountDetails {
   accountId: string;
   balances: Balance[];
@@ -26,6 +38,8 @@ export interface Transaction {
   sourceAccount: string;
   operationCount: number;
   successful: boolean;
+  feePaid?: string;
+  feeCharged?: string;
 }
 
 /**
@@ -127,22 +141,59 @@ class StellarWallet {
   }
 
   /**
+   * Calculate transaction fee
+   */
+  calculateFee(operationCount: number = 1): FeeInfo {
+    const baseFee = StellarSdk.BASE_FEE;
+    const operationFee = (baseFee * operationCount).toString();
+    const totalFee = operationFee;
+    
+    return {
+      baseFee: baseFee.toString(),
+      operationFee,
+      totalFee,
+      feeInXLM: (parseInt(totalFee) / 10000000).toFixed(7) // Convert stroops to XLM
+    };
+  }
+
+  /**
+   * Create payment asset from balance
+   */
+  createAssetFromBalance(balance: Balance): any {
+    if (balance.asset === 'XLM' || balance.assetType === 'native') {
+      return StellarSdk.Asset.native();
+    } else {
+      if (!balance.issuer) {
+        throw new Error('Issuer required for custom assets');
+      }
+      return new StellarSdk.Asset(balance.asset, balance.issuer);
+    }
+  }
+
+  /**
    * Create a payment transaction
    */
-  async createPayment(sourceKeypair: any, destinationPublicKey: string, amount: number, asset: string = 'XLM') {
+  async createPayment(
+    sourceKeypair: any, 
+    destinationPublicKey: string, 
+    amount: number, 
+    asset: PaymentAsset
+  ) {
     try {
       const server = this.getServer();
       const sourceAccount = await server.loadAccount(sourceKeypair.publicKey());
       
       let paymentAsset: any;
-      if (asset === 'XLM') {
+      if (asset.code === 'XLM' || !asset.issuer) {
         paymentAsset = StellarSdk.Asset.native();
       } else {
-        throw new Error('Custom assets not implemented in this demo');
+        paymentAsset = new StellarSdk.Asset(asset.code, asset.issuer);
       }
 
+      const feeInfo = this.calculateFee(1);
+
       const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
-        fee: StellarSdk.BASE_FEE,
+        fee: feeInfo.baseFee,
         networkPassphrase: this.getNetworkPassphrase()
       })
         .addOperation(
@@ -158,7 +209,10 @@ class StellarWallet {
       transaction.sign(sourceKeypair);
       
       const result = await server.submitTransaction(transaction);
-      return result;
+      return {
+        ...result,
+        feeInfo
+      };
     } catch (error: any) {
       throw new Error(`Payment failed: ${error.message}`);
     }
@@ -184,7 +238,9 @@ class StellarWallet {
         createdAt: tx.created_at,
         sourceAccount: tx.source_account,
         operationCount: tx.operation_count,
-        successful: tx.successful
+        successful: tx.successful,
+        feePaid: tx.fee_paid,
+        feeCharged: tx.fee_charged
       }));
     } catch (error: any) {
       throw new Error(`Failed to fetch transactions: ${error.message}`);

@@ -493,6 +493,12 @@ section h2 {
   outline-offset: 2px;
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed !important;
+  pointer-events: none;
+}
+
 * {
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
 }
